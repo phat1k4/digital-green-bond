@@ -49,8 +49,8 @@ template UserCreditRequest
 
     ensure amount > 0.0
 
-    -- choice Credit : (ContractId Holding.I, Optional (ContractId Holding.I))
-    choice Credit : ()
+    choice Credit : (ContractId Holding.I, Optional (ContractId Holding.I))
+    -- choice Credit : ()
       with
         holdingCid : ContractId Holding.I
       controller custodian
@@ -69,9 +69,8 @@ template UserCreditRequest
         (userHoldingCid, adminRemaining) <- exercise transferRequest CashTransfer.Accept
           with
             holdingCids = [holdingCid]
-
-        -- pure(userHoldingCid,adminRemaining)
-        pure()
+        -- pure()
+        pure(userHoldingCid,adminRemaining)
     
     choice Reject : ()
       controller custodian

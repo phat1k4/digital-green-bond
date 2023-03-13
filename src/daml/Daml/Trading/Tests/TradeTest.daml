@@ -95,75 +95,74 @@ setup = do
         instrument = cashInstrument
         amount = 1000.0
 
-  -- (aliceCashHoldingCid,_) <- 
-  submit admin do
+  (aliceCashHoldingCid,_) <- submit admin do
     exerciseCmd aliceRequestCid CreditCashAccount.Credit
       with
         holdingCid = adminHoldingCid
 
-  -- nftIssueRequestCid <- submit bob do 
-  --   createCmd Nft.NftRequest 
-  --     with 
-  --       owner = bob 
-  --       admin 
-  --       pictureName = "Picture" 
-  --       pictureType = Nft.Landscape 
-  --       pictureDescription = "Picture Description" 
-  --       rarity = Nft.Rare 
-  --       royaltyRate = 0.025 
-  --       initialPrice = 100.0 
-  --       observers = singleton alice 
-  --       cashInstrument 
-  -- nftKey <- submit admin $ exerciseCmd nftIssueRequestCid Nft.Accept 
-  -- (nftCid, nft) <- fromSome <$> queryContractKey @Nft.Nft bob nftKey
+  nftIssueRequestCid <- submit bob do 
+    createCmd Nft.NftRequest 
+      with 
+        owner = bob 
+        admin 
+        pictureName = "Picture" 
+        pictureType = Nft.Landscape 
+        pictureDescription = "Picture Description" 
+        rarity = Nft.Rare 
+        royaltyRate = 0.025 
+        initialPrice = 100.0 
+        observers = singleton alice 
+        cashInstrument 
+  nftKey <- submit admin $ exerciseCmd nftIssueRequestCid Nft.Accept 
+  (nftCid, nft) <- fromSome <$> queryContractKey @Nft.Nft bob nftKey
 
-  -- settlementFactoryCid <- toInterfaceContractId @Factory.I <$> submit admin do
-  --   createCmd Factory
-  --     with
-  --       provider = admin
-  --       observers = Set.fromList [alice, bob] 
+  settlementFactoryCid <- toInterfaceContractId @Factory.I <$> submit admin do
+    createCmd Factory
+      with
+        provider = admin
+        observers = Set.fromList [alice, bob] 
   
-  -- routeProviderCid <- toInterfaceContractId @RouteProvider.I <$> submit admin do 
-  --   createCmd SingleCustodian with 
-  --     provider = admin; observers = Set.fromList [alice, bob]; custodian = admin 
+  routeProviderCid <- toInterfaceContractId @RouteProvider.I <$> submit admin do 
+    createCmd SingleCustodian with 
+      provider = admin; observers = Set.fromList [alice, bob]; custodian = admin 
 
-  -- let 
-  --   nftKey = InstrumentKey with depository = admin, issuer = admin, id = Id "Picture", version = Nft.nftVersion
+  let 
+    nftKey = InstrumentKey with depository = admin, issuer = admin, id = Id "Picture", version = Nft.nftVersion
 
-  -- tradeCid <- submit bob $ exerciseCmd bobServiceCid Service.Create_Trade with 
-  --   buyerCashAccKey = aliceCashAccKey 
-  --   amount = 900.0 
-  --   cashInstrument
-  --   nftKey 
-  --   settlementFactoryCid 
-  --   routeProviderCid 
+  tradeCid <- submit bob $ exerciseCmd bobServiceCid Service.Create_Trade with 
+    buyerCashAccKey = aliceCashAccKey 
+    amount = 900.0 
+    cashInstrument
+    nftKey 
+    settlementFactoryCid 
+    routeProviderCid 
   
-  -- -- alice cannot quickly change amount before bob agrees because of agreedAmount
-  -- tradeCid <- submit alice $ exerciseCmd tradeCid Trade.Buyer_Counter with newAmount = 700.0 
-  -- submitMustFail bob $ exerciseCmd tradeCid Trade.Agree with actor = alice, agreedAmount = 900.0 
+  -- alice cannot quickly change amount before bob agrees because of agreedAmount
+  tradeCid <- submit alice $ exerciseCmd tradeCid Trade.Buyer_Counter with newAmount = 700.0 
+  submitMustFail bob $ exerciseCmd tradeCid Trade.Agree with actor = alice, agreedAmount = 900.0 
 
-  -- -- bob agrees with 750, alice cannot change to 700 and settle
-  -- tradeCid <- submit bob $ exerciseCmd tradeCid Trade.Seller_Counter with newAmount = 750.0
-  -- tradeCid <- submit bob $ exerciseCmd tradeCid Trade.Agree with actor = bob, agreedAmount = 750.0 
-  -- tradeCid <- submit alice $ exerciseCmd tradeCid Trade.Buyer_Counter with newAmount = 700.0 
-  -- tradeCid <- submit alice $ exerciseCmd tradeCid Trade.Agree with actor = alice, agreedAmount = 700.0 
-  -- submitMustFail alice $ exerciseCmd tradeCid Trade.Create_Settlement with actor = alice 
+  -- bob agrees with 750, alice cannot change to 700 and settle
+  tradeCid <- submit bob $ exerciseCmd tradeCid Trade.Seller_Counter with newAmount = 750.0
+  tradeCid <- submit bob $ exerciseCmd tradeCid Trade.Agree with actor = bob, agreedAmount = 750.0 
+  tradeCid <- submit alice $ exerciseCmd tradeCid Trade.Buyer_Counter with newAmount = 700.0 
+  tradeCid <- submit alice $ exerciseCmd tradeCid Trade.Agree with actor = alice, agreedAmount = 700.0 
+  submitMustFail alice $ exerciseCmd tradeCid Trade.Create_Settlement with actor = alice 
 
-  -- tradeCid <- submit bob $ exerciseCmd tradeCid Trade.Seller_Counter with newAmount = 800.0
-  -- tradeCid <- submit alice $ exerciseCmd tradeCid Trade.Agree with actor = alice, agreedAmount = 800.0 
-  -- tradeCid <- submit bob $ exerciseCmd tradeCid Trade.Agree with actor = bob, agreedAmount = 800.0 
+  tradeCid <- submit bob $ exerciseCmd tradeCid Trade.Seller_Counter with newAmount = 800.0
+  tradeCid <- submit alice $ exerciseCmd tradeCid Trade.Agree with actor = alice, agreedAmount = 800.0 
+  tradeCid <- submit bob $ exerciseCmd tradeCid Trade.Agree with actor = bob, agreedAmount = 800.0 
 
-  -- tradeSettlementCid <- submit alice $ exerciseCmd tradeCid Trade.Create_Settlement with actor = alice
+  tradeSettlementCid <- submit alice $ exerciseCmd tradeCid Trade.Create_Settlement with actor = alice
 
-  -- tradeSettlementCid <- submit alice $ exerciseCmd tradeSettlementCid Trade.Allocate_Pay with 
-  --   allocation = Pledge $ coerceContractId aliceCashHoldingCid
-  -- tradeSettlementCid <- submit bob $ exerciseCmd tradeSettlementCid Trade.Approve_Pay with 
-  --   approval = TakeDelivery bobCashAccKey
-  -- tradeSettlementCid <- submit bob $ exerciseCmd tradeSettlementCid Trade.Allocate_Receive with 
-  --   allocation = Pledge $ coerceContractId nft.nftHoldingCid
-  -- tradeSettlementCid <- submit alice $ exerciseCmd tradeSettlementCid Trade.Approve_Receive with 
-  --   approval = TakeDelivery aliceNftAccKey
+  tradeSettlementCid <- submit alice $ exerciseCmd tradeSettlementCid Trade.Allocate_Pay with 
+    allocation = Pledge $ coerceContractId aliceCashHoldingCid
+  tradeSettlementCid <- submit bob $ exerciseCmd tradeSettlementCid Trade.Approve_Pay with 
+    approval = TakeDelivery bobCashAccKey
+  tradeSettlementCid <- submit bob $ exerciseCmd tradeSettlementCid Trade.Allocate_Receive with 
+    allocation = Pledge $ coerceContractId nft.nftHoldingCid
+  tradeSettlementCid <- submit alice $ exerciseCmd tradeSettlementCid Trade.Approve_Receive with 
+    approval = TakeDelivery aliceNftAccKey
   
-  -- (aliceNftHolding, bobCashHolding, tradeSuccessfullySignal) <- submitMulti [alice] [public] $ exerciseCmd tradeSettlementCid Trade.Trade_Settle
+  (aliceNftHolding, bobCashHolding, tradeSuccessfullySignal) <- submitMulti [alice] [public] $ exerciseCmd tradeSettlementCid Trade.Trade_Settle
 
   pure ()
