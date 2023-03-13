@@ -48,7 +48,8 @@ setup = do
         rarity = Nft.Rare 
         royaltyRate = 0.025 
         initialPrice = 100.0 
-        observers = S.empty
+        observers = S.empty 
+        cashInstrument 
 
   aliceNftKey <- submit admin $ exerciseCmd nftIssueRequestCid Nft.Accept 
 

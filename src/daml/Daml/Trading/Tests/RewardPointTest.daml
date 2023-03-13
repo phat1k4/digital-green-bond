@@ -53,6 +53,11 @@ successfullyReceivePoints = do
       with
         provider = admin
         observers = Set.fromList [alice, bob] 
+  
+  routeProviderCid <- toInterfaceContractId @RouteProvider.I <$> submit admin do 
+    createCmd SingleCustodian with 
+      provider = admin; observers = Set.fromList [alice, bob]; custodian = admin 
+  
   let 
     nftKey = InstrumentKey with depository = admin, issuer = admin, id = Id "Picture", version = Nft.nftVersion
 
@@ -62,6 +67,7 @@ successfullyReceivePoints = do
     cashInstrument
     nftKey 
     settlementFactoryCid 
+    routeProviderCid 
 
   tradeCid <- submit bob $ exerciseCmd tradeCid Trade.Seller_Counter with newAmount = 988_050.0
   tradeCid <- submit alice $ exerciseCmd tradeCid Trade.Agree with actor = alice, agreedAmount = 988_050.0 
