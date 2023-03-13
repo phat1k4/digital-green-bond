@@ -1,0 +1,137 @@
+module Daml.Trading.Nft.Nft where
+
+import DA.Optional (fromSome)
+import DA.Set qualified as S 
+import DA.Map (fromList)
+import DA.Date (date, Month(..))
+import DA.Time (time)
+
+import Daml.Finance.Interface.Account.Account qualified as Account (Credit(..), I, exerciseInterfaceByKey)
+import Daml.Finance.Interface.Holding.Base qualified as Holding (I)
+import Daml.Finance.Interface.Instrument.Base.Instrument qualified as Instrument (K, qty)
+import Daml.Finance.Interface.Instrument.Bond.FixedRate.Factory qualified as FixedRate (Create(..))
+import Daml.Finance.Interface.Instrument.Bond.FixedRate.Types qualified as FixedRate (FixedRate(..))
+import Daml.Finance.Interface.Types.Date.Schedule qualified as Schedule (PeriodicSchedule(..), Frequency(..))
+import Daml.Finance.Interface.Types.Date.Calendar qualified as Calendar
+import Daml.Finance.Interface.Types.Date.RollConvention qualified as RollConvention
+import Daml.Finance.Interface.Types.Date.DayCount qualified as DayCount 
+import Daml.Finance.Interface.Types.Common.Types (AccountKey(..), Id(..), InstrumentKey(..))
+import Daml.Trading.Account.Account (nftLabel, Account)
+
+data PictureType
+    = Portrait
+    | Landscape
+        deriving (Eq, Show)
+
+data Rarity 
+    = Common
+    | Rare
+    | Super_Rare
+        deriving (Eq, Show)
+
+nftVersion = "0"
+
+template NftRequest
+  with
+    owner: Party 
+    admin: Party 
+    pictureName : Text
+    pictureType: PictureType
+    pictureDescription: Text
+    rarity: Rarity
+    royaltyRate: Decimal 
+    initialPrice: Decimal 
+    observers: S.Set Party 
+    cashInstrument: InstrumentKey 
+  where
+    signatory owner
+    observer admin
+
+    choice Accept : Instrument.K 
+      controller admin 
+      do
+        let 
+          accountKey = AccountKey with custodian = admin, owner, id = Id nftLabel
+          amount = 1.0
+          instrumentKey = InstrumentKey with depository = admin, issuer = admin, id = Id pictureName, version = nftVersion
+        (accountCid, account) <- fetchByKey @Account (admin, owner) 
+
+        let 
+          (_, _, instrumentFactoryCid, _) = fromSome account.optNftAccount 
+          fixedRate = FixedRate.FixedRate with 
+            instrument = instrumentKey 
+            description = pictureDescription 
+            couponRate = 0.1 
+            periodicSchedule = Schedule.PeriodicSchedule with 
+              effectiveDate = date 2023 May 10 
+              terminationDate = date 2025 Jun 11 
+              firstRegularPeriodStartDate = None 
+              lastRegularPeriodEndDate = None 
+              frequency = Schedule.Frequency with 
+                period = RollConvention.M 
+                periodMultiplier = 6 
+                rollConvention = RollConvention.EOM 
+              businessDayAdjustment = Calendar.BusinessDayAdjustment with 
+                calendarIds = [] 
+                convention = Calendar.Following 
+              effectiveDateBusinessDayAdjustment = None 
+              terminationDateBusinessDayAdjustment = None 
+              stubPeriodType = None 
+            holidayCalendarIds = [] 
+            calendarDataProvider = admin 
+            dayCountConvention = DayCount.ActActICMA 
+            currency = cashInstrument 
+            lastEventTimestamp = time (date 2023 May 10) 1 1 1 
+
+        now <- getTime 
+
+        exercise instrumentFactoryCid FixedRate.Create with 
+          fixedRate
+          observers = fromList [("InstrumentObserver", observers)]
+        
+        nftHoldingCid <- Account.exerciseInterfaceByKey @Account.I accountKey admin Account.Credit
+          with
+            quantity = Instrument.qty amount instrumentKey
+
+        create Nft with 
+          instrumentKey 
+          accountKey 
+          nftHoldingCid 
+          pictureName 
+          pictureType 
+          pictureDescription 
+          rarity 
+          royaltyRate 
+          issued = now 
+          lastPrice = initialPrice 
+          observers
+        
+        pure (instrumentKey)
+
+    choice Decline : ()
+      controller admin
+      do pure ()
+
+    choice Withdraw : ()
+      controller owner
+      do pure ()
+
+template Nft 
+  with 
+    instrumentKey: Instrument.K 
+    accountKey: AccountKey 
+    nftHoldingCid: ContractId Holding.I 
+    pictureName : Text
+    pictureType: PictureType
+    pictureDescription: Text
+    rarity: Rarity
+    royaltyRate: Decimal 
+    issued: Time 
+    lastPrice: Decimal 
+    observers: S.Set Party 
+  where 
+    signatory accountKey.custodian, accountKey.owner 
+    observer observers
+    -- since each instrumentKey is associated with 1 nft only, we use instrumentKey as key
+    key instrumentKey: Instrument.K 
+    maintainer key.issuer 

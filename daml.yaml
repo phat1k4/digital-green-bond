@@ -1,0 +1,41 @@
+# for config file options, refer to
+# https://docs.daml.com/tools/assistant.html#project-config-file-daml-yaml
+
+sdk-version: 2.5.2
+name: digital-green-bond
+source: src/daml
+# init-script: Scripts.Transfer:runTransfer
+version: 0.0.1
+dependencies:
+  - daml-prim
+  - daml-stdlib
+  - daml-script
+  - daml-trigger
+data-dependencies:
+  # INTERFACE DEPENDENCIES
+  - .lib/daml-finance-interface-account.dar
+  - .lib/daml-finance-interface-holding.dar
+  - .lib/daml-finance-interface-instrument-base.dar
+  - .lib/daml-finance-interface-instrument-bond.dar
+  - .lib/daml-finance-interface-instrument-token.dar
+  - .lib/daml-finance-interface-lifecycle.dar
+  - .lib/daml-finance-interface-settlement.dar
+  - .lib/daml-finance-interface-util.dar
+  - .lib/daml-finance-interface-types-common.dar
+  - .lib/daml-finance-interface-types-date.dar
+  # IMPLEMENTATION DEPENDENCIES
+  - .lib/daml-finance-account.dar
+  - .lib/daml-finance-data.dar
+  - .lib/daml-finance-holding.dar
+  - .lib/daml-finance-instrument-bond.dar
+  - .lib/daml-finance-instrument-token.dar
+  - .lib/daml-finance-lifecycle.dar
+  - .lib/daml-finance-settlement.dar
+  - .lib/daml-finance-util.dar
+start-navigator: no
+build-options:
+  - --target=1.15
+# sandbox-options:
+#   - --config=canton.config
+# init-script:
+#   Daml.Trading.Scripts.HoldingSetup:initialize
