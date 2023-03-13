@@ -49,7 +49,8 @@ template UserCreditRequest
 
     ensure amount > 0.0
 
-    choice Credit : (ContractId Holding.I, Optional (ContractId Holding.I))
+    -- choice Credit : (ContractId Holding.I, Optional (ContractId Holding.I))
+    choice Credit : ()
       with
         holdingCid : ContractId Holding.I
       controller custodian
@@ -69,7 +70,8 @@ template UserCreditRequest
           with
             holdingCids = [holdingCid]
 
-        pure(userHoldingCid,adminRemaining)
+        -- pure(userHoldingCid,adminRemaining)
+        pure()
     
     choice Reject : ()
       controller custodian
