@@ -3,7 +3,7 @@ module Daml.Trading.Account.Account where
 import DA.Optional (isNone)
 import DA.Map qualified as M (fromList)
 import DA.Set qualified as S (fromList, singleton)
-import DA.List (head, tail)
+import DA.List (head, tail, last)
 import Daml.Finance.Interface.Account.Factory qualified as Account (Create(..), F)
 import Daml.Finance.Interface.Account.Account qualified as Account (Controllers(..))
 import Daml.Finance.Interface.Holding.Factory qualified as Holding (F)
@@ -201,12 +201,17 @@ template Account
         holdingCids : [ContractId Holding.I]
       controller owner
       do
-        let
-          fungibleCids : [ContractId Fungible.I] = map (\hCid -> coerceContractId hCid) holdingCids
-        mergeFungible <- exercise (head(fungibleCids)) Fungible.Merge with fungibleCids = tail(fungibleCids)
-        let
-          mergeholding = coerceContractId mergeFungible
-        pure (mergeholding)
+        if (head(holdingCids) /= last(holdingCids)) then 
+          do
+            let
+              fungibleCids : [ContractId Fungible.I] = map (\hCid -> coerceContractId hCid) holdingCids
+            mergeFungible <- exercise (head(fungibleCids)) Fungible.Merge with fungibleCids = tail(fungibleCids)
+            let
+              mergeholding = coerceContractId mergeFungible
+            pure(mergeholding)
+        else
+          do
+            pure(head(holdingCids))
 
 
 -- we use custodian Party as admin for simplicity
