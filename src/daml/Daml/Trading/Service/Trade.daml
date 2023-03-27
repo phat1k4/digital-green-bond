@@ -170,6 +170,7 @@ template TradeSettlement
           Unallocated -> abort "Allocation type not allowed"
           CreditReceiver -> abort "Allocation type not allowed"
           SettleOffledger -> abort "Allocation type not allowed"
+          PassThroughFrom _ -> abort "Allocation type not allowed"
     
     choice Approve_Pay: ContractId TradeSettlement 
       with 
@@ -197,6 +198,7 @@ template TradeSettlement
           Unallocated -> abort "Allocation type not allowed"
           CreditReceiver -> abort "Allocation type not allowed"
           SettleOffledger -> abort "Allocation type not allowed"
+          PassThroughFrom _ -> abort "Allocation type not allowed"
     
     choice Approve_Receive: ContractId TradeSettlement 
       with 
@@ -230,7 +232,7 @@ template TradeSettlement
           adminCashAccKey = AccountKey with custodian, owner = custodian, id = Id Account.cashLabel 
         
         exercise royaltyTransferableCid Transferable.Transfer with 
-          actors = S.singleton buyer 
+          actors = S.fromList [custodian, buyer] 
           newOwnerAccount = adminCashAccKey 
 
         tradeSuccessfullySignal <- create TradingPoint.TradeSuccess with
