@@ -36,7 +36,8 @@ template AccountRequest
             nationalId 
             address 
             optCashAccount = None 
-            optNftAccount = None 
+            optNftAccount = None
+            optGreenBondAccount = None
             badges = []
 
         create TradingPoint.TradingPoint with

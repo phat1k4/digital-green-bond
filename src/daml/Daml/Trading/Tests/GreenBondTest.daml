@@ -1,0 +1,154 @@
+module Daml.Trading.Tests.GreenBondTest where 
+
+import DA.Optional (fromSome)
+import DA.Set qualified as S 
+import DA.Map (fromList)
+import DA.Date (date, Month(..))
+import DA.Time (time)
+
+import DA.Set qualified as S (empty)
+import Daml.Script 
+
+import Daml.Finance.Interface.Types.Common.Types (InstrumentKey(..), Id(..))
+
+import Daml.Trading.Account.CreateAccount qualified as CreateAccount
+import Daml.Trading.Account.Account qualified as Account
+-- import Daml.Trading.Nft.Nft qualified as Nft
+import Daml.Trading.Bond.GreenBond qualified as GreenBond
+import Daml.Trading.Scripts.UserSetup qualified as UserSetup (createUsers)
+import Daml.Trading.Scripts.HoldingSetup qualified as HoldingSetup 
+import Daml.Finance.Interface.Types.Date.Schedule qualified as Schedule (PeriodicSchedule(..), Frequency(..))
+import Daml.Finance.Interface.Types.Date.RollConvention qualified as RollConvention
+import Daml.Finance.Interface.Types.Date.Calendar qualified as Calendar
+import Daml.Finance.Interface.Types.Date.DayCount qualified as DayCount 
+import qualified Daml.Finance.Interface.Util.Disclosure as Disclosure
+
+
+shouldAcceptGreenbondRequest: Script () 
+shouldAcceptGreenbondRequest = do 
+  (public, admin, cashInstrument, accountFactoryCid, 
+    cashHoldingFactoryCid, nftHoldingFactoryCid, greenBondHoldingFactoryCid, instrumentFactoryCid, adminHoldingCid) <- HoldingSetup.initialize 
+  [alice] <- UserSetup.createUsers public ["Alice"]
+ 
+  aliceRequestCid <- submit alice do
+    createCmd CreateAccount.AccountRequest
+      with
+        owner = alice
+        custodian = admin
+        accountType = Account.Retail 
+        username = "alice" 
+        realName = "Alice Ackerson" 
+        passportNumber = "222222" 
+        nationalId = "" 
+        address  = "New York" 
+  (aliceAccountCid, _) <- submit admin $ exerciseCmd aliceRequestCid CreateAccount.Request_Accept
+  aliceAccountCid <- submit admin $ exerciseCmd aliceAccountCid Account.Create_GreenBond_Account 
+    with 
+      description = "Alice GreenBond Account" 
+      accountFactoryCid 
+      holdingFactoryCid = greenBondHoldingFactoryCid 
+      instrumentFactoryCid 
+      observers = [] 
+
+  greenBondIssueRequestCid <- submit alice do 
+    
+    createCmd GreenBond.GreenBondRequest
+      with
+        depository = admin
+        owner = alice
+        -- id : Id
+        -- version : Text
+        purpose  = "Text"
+        couponRate = 0.01
+        periodicSchedule = Schedule.PeriodicSchedule with 
+          effectiveDate = date 2023 May 10 
+          terminationDate = date 2025 Jun 11 
+          firstRegularPeriodStartDate = None 
+          lastRegularPeriodEndDate = None 
+          frequency = Schedule.Frequency with 
+            period = RollConvention.M 
+            periodMultiplier = 6 
+            rollConvention = RollConvention.EOM 
+          businessDayAdjustment = Calendar.BusinessDayAdjustment with 
+            calendarIds = [] 
+            convention = Calendar.Following 
+          effectiveDateBusinessDayAdjustment = None 
+          terminationDateBusinessDayAdjustment = None 
+          stubPeriodType = None 
+        holidayCalendarIds = []
+        calendarDataProvider = admin 
+        dayCountConvention = DayCount.ActActICMA 
+        cashInstrument 
+        notional = 0.0
+        observers = S.empty
+        lastEventTimestamp = time (date 2023 May 10) 1 1 1 
+        impact = GreenBond.Social_Impact_1
+
+  aliceNftKey <- submit admin $ exerciseCmd greenBondIssueRequestCid GreenBond.Accept 
+
+  pure ()
+
+
+shouldRejectGreenbondRequest: Script () 
+shouldRejectGreenbondRequest = do 
+  (public, admin, cashInstrument, accountFactoryCid, 
+    cashHoldingFactoryCid, nftHoldingFactoryCid, greenBondHoldingFactoryCid, instrumentFactoryCid, adminHoldingCid) <- HoldingSetup.initialize 
+  [alice] <- UserSetup.createUsers public ["Alice"]
+ 
+  aliceRequestCid <- submit alice do
+    createCmd CreateAccount.AccountRequest
+      with
+        owner = alice
+        custodian = admin
+        accountType = Account.Retail 
+        username = "alice" 
+        realName = "Alice Ackerson" 
+        passportNumber = "222222" 
+        nationalId = "" 
+        address  = "New York" 
+  (aliceAccountCid, _) <- submit admin $ exerciseCmd aliceRequestCid CreateAccount.Request_Accept
+  aliceAccountCid <- submit admin $ exerciseCmd aliceAccountCid Account.Create_GreenBond_Account 
+    with 
+      description = "Alice GreenBond Account" 
+      accountFactoryCid 
+      holdingFactoryCid = greenBondHoldingFactoryCid 
+      instrumentFactoryCid 
+      observers = [] 
+
+  greenBondIssueRequestCid <- submit alice do 
+    
+    createCmd GreenBond.GreenBondRequest
+      with
+        depository = admin
+        owner = alice
+        -- id : Id
+        -- version : Text
+        purpose  = "Text"
+        couponRate = 0.01
+        periodicSchedule = Schedule.PeriodicSchedule with 
+          effectiveDate = date 2023 May 10 
+          terminationDate = date 2025 Jun 11 
+          firstRegularPeriodStartDate = None 
+          lastRegularPeriodEndDate = None 
+          frequency = Schedule.Frequency with 
+            period = RollConvention.M 
+            periodMultiplier = 6 
+            rollConvention = RollConvention.EOM 
+          businessDayAdjustment = Calendar.BusinessDayAdjustment with 
+            calendarIds = [] 
+            convention = Calendar.Following 
+          effectiveDateBusinessDayAdjustment = None 
+          terminationDateBusinessDayAdjustment = None 
+          stubPeriodType = None 
+        holidayCalendarIds = []
+        calendarDataProvider = admin 
+        dayCountConvention = DayCount.ActActICMA 
+        cashInstrument 
+        notional = 0.0
+        observers = S.empty
+        lastEventTimestamp = time (date 2023 May 10) 1 1 1 
+        impact = GreenBond.Social_Impact_1
+
+  aliceNftKey <- submit admin $ exerciseCmd greenBondIssueRequestCid GreenBond.Decline 
+
+  pure ()

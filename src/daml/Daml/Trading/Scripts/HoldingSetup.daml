@@ -17,7 +17,7 @@ import Daml.Finance.Holding.NonFungible qualified as NonFungible (Factory(..))
 import Daml.Finance.Instrument.Bond.FixedRate.Factory qualified as Instrument (Factory(..))
 import Daml.Finance.Instrument.Token.Instrument qualified as Cash (Instrument(..))
 
-import Daml.Trading.Account.Account (AccountFactoryReference(..), HoldingFactoryReference(..), InstrumentFactoryReference(..), nftLabel)
+import Daml.Trading.Account.Account (AccountFactoryReference(..), HoldingFactoryReference(..), InstrumentFactoryReference(..), nftLabel, greenBondLabel)
 import Daml.Trading.Scripts.UserSetup qualified as UserSetup (getDefaultParties)
 import Daml.Trading.Account.Account qualified as Account
 import Daml.Trading.Account.CreateAccount qualified as CreateAccount
@@ -64,6 +64,18 @@ initialize = do
         holdingType = "NonFungible" 
         holdingFactoryCid = nftHoldingFactoryCid 
 
+  greenBondHoldingFactoryCid <- toInterfaceContractId @Holding.F <$> submit admin do 
+    createCmd NonFungible.Factory 
+      with 
+        provider = admin 
+        observers = fromList [("PublicObserver", singleton public )] 
+  submit admin do 
+    createCmd HoldingFactoryReference 
+      with 
+        provider = admin 
+        holdingType = "BondNonFungible" 
+        holdingFactoryCid = greenBondHoldingFactoryCid 
+
   instrumentFactoryCid <- toInterfaceContractId @Instrument.F <$> submit admin do 
     createCmd Instrument.Factory 
       with 
@@ -74,7 +86,19 @@ initialize = do
       with 
         provider = admin 
         instrumentType = nftLabel 
-        instrumentFactoryCid 
+        instrumentFactoryCid
+
+  instrumentFactoryCid <- toInterfaceContractId @Instrument.F <$> submit admin do 
+    createCmd Instrument.Factory 
+      with 
+        provider = admin 
+        observers = fromList [("PublicObserver", singleton public )] 
+  submit admin do 
+    createCmd InstrumentFactoryReference 
+      with 
+        provider = admin 
+        instrumentType = greenBondLabel 
+        instrumentFactoryCid
 
   let (instrumentId, instrumentVersion) = instrumentData
   now <- getTime
@@ -118,6 +142,14 @@ initialize = do
       instrumentFactoryCid
       observers = [public] 
 
+  adminAccountCid <- submit admin $ exerciseCmd adminAccountCid Account.Create_GreenBond_Account
+    with 
+      description = "Admin Green Bond Account" 
+      accountFactoryCid
+      holdingFactoryCid = greenBondHoldingFactoryCid
+      instrumentFactoryCid
+      observers = [public] 
+
   adminCreditCid <- submit admin do
     createCmd CreditCashAccount.AdminCreditRequest
       with
@@ -127,6 +159,5 @@ initialize = do
         amount = 100000000.0
   adminHoldingCid <- submit admin $ exerciseCmd adminCreditCid CreditCashAccount.Accept
 
-  pure (public, admin, cashInstrument, accountFactoryCid, cashHoldingFactoryCid, nftHoldingFactoryCid, instrumentFactoryCid, adminHoldingCid)
-
-type HoldingSetupState = (Party, Party, InstrumentKey, ContractId Account.F, ContractId Holding.F, ContractId Holding.F, ContractId Instrument.F, ContractId Holding.I)
+  pure (public, admin, cashInstrument, accountFactoryCid, cashHoldingFactoryCid, nftHoldingFactoryCid, greenBondHoldingFactoryCid, instrumentFactoryCid, adminHoldingCid)
+type HoldingSetupState = (Party, Party, InstrumentKey, ContractId Account.F, ContractId Holding.F, ContractId Holding.F, ContractId Holding.F, ContractId Instrument.F, ContractId Holding.I)

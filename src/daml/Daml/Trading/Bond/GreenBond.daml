@@ -1,0 +1,172 @@
+module Daml.Trading.Bond.GreenBond where 
+
+import DA.Optional (fromSome)
+import DA.Set qualified as S 
+import DA.Map (fromList)
+import DA.Date (date, Month(..))
+import DA.Time (time)
+
+import Daml.Finance.Interface.Types.Date.DayCount (DayCountConventionEnum)
+import qualified Daml.Finance.Interface.Util.Disclosure as Disclosure
+import Daml.Finance.Interface.Types.Date.Schedule (PeriodicSchedule)
+import Daml.Finance.Interface.Account.Account qualified as Account (Credit(..), I, exerciseInterfaceByKey)
+import Daml.Finance.Interface.Holding.Base qualified as Holding (I)
+import Daml.Finance.Interface.Instrument.Base.Instrument qualified as Instrument (K, qty)
+import Daml.Finance.Interface.Instrument.Bond.FixedRate.Factory qualified as FixedRate (Create(..))
+import Daml.Finance.Interface.Instrument.Bond.FixedRate.Types qualified as FixedRate (FixedRate(..))
+import Daml.Finance.Interface.Types.Date.Schedule qualified as Schedule (PeriodicSchedule(..), Frequency(..))
+import Daml.Finance.Interface.Types.Date.Calendar qualified as Calendar
+import Daml.Finance.Interface.Types.Date.RollConvention qualified as RollConvention
+import Daml.Finance.Interface.Types.Date.DayCount qualified as DayCount 
+import Daml.Finance.Interface.Types.Common.Types (AccountKey(..), Id(..), InstrumentKey(..))
+import Daml.Trading.Account.Account (greenBondLabel, Account)
+
+data ImpactEnum
+  = Social_Impact_1
+  | Social_Impact_2
+  | Environmental_Impact_1
+  deriving (Eq, Show)
+
+greenBondVersion = "0"
+
+template GreenBondRequest
+  with
+    depository : Party
+    owner : Party
+    -- id : Id
+    -- version : Text
+    purpose : Text
+    couponRate : Decimal
+    periodicSchedule : PeriodicSchedule
+    holidayCalendarIds : [Text]
+    calendarDataProvider : Party
+    dayCountConvention : DayCountConventionEnum
+    cashInstrument : InstrumentKey
+    notional : Decimal
+    observers : S.Set Party 
+    lastEventTimestamp : Time
+    impact : ImpactEnum
+  where
+    signatory owner
+    observer depository
+
+    choice Accept : Instrument.K 
+      controller depository 
+      do
+        let 
+          accountKey = AccountKey with custodian = depository, owner, id = Id greenBondLabel
+          amount = 1.0
+          instrumentKey = InstrumentKey with depository = depository, issuer = depository, id = Id purpose, version = greenBondVersion
+        (accountCid, account) <- fetchByKey @Account (depository, owner) 
+
+        let 
+          (_, _, instrumentFactoryCid, _) = fromSome account.optGreenBondAccount 
+          fixedRate = FixedRate.FixedRate with 
+            instrument = instrumentKey 
+            description = purpose 
+            couponRate = 0.1 
+            periodicSchedule = Schedule.PeriodicSchedule with 
+              effectiveDate = date 2023 May 10 
+              terminationDate = date 2025 Jun 11 
+              firstRegularPeriodStartDate = None 
+              lastRegularPeriodEndDate = None 
+              frequency = Schedule.Frequency with 
+                period = RollConvention.M 
+                periodMultiplier = 6 
+                rollConvention = RollConvention.EOM 
+              businessDayAdjustment = Calendar.BusinessDayAdjustment with 
+                calendarIds = [] 
+                convention = Calendar.Following 
+              effectiveDateBusinessDayAdjustment = None 
+              terminationDateBusinessDayAdjustment = None 
+              stubPeriodType = None 
+            holidayCalendarIds = [] 
+            calendarDataProvider = depository 
+            dayCountConvention = DayCount.ActActICMA 
+            currency = cashInstrument 
+            lastEventTimestamp = time (date 2023 May 10) 1 1 1 
+
+        now <- getTime 
+
+        exercise instrumentFactoryCid FixedRate.Create with 
+          fixedRate
+          observers = fromList [("InstrumentObserver", observers)]
+        
+        greenbondHoldingCid <- Account.exerciseInterfaceByKey @Account.I accountKey depository Account.Credit
+          with
+            quantity = Instrument.qty amount instrumentKey
+
+        create GreenBond with 
+          -- depository 
+          -- issuer 
+          -- id
+          -- version
+          instrumentKey
+          accountKey
+          greenbondHoldingCid
+          purpose
+          couponRate
+          periodicSchedule
+          holidayCalendarIds
+          calendarDataProvider
+          dayCountConvention
+          cashInstrument
+          notional
+          observers
+          lastEventTimestamp
+          impact
+        
+        pure (instrumentKey)
+
+    choice Decline : ()
+      controller depository
+      do pure ()
+
+
+template GreenBond
+  with
+    -- depository : Party
+      -- ^ The depository of the green bond.
+    -- issuer : Party
+      -- ^ The issuer of the green bond.
+    -- id : Id
+    --   -- ^ The identifier of the green bond.
+    -- version : Text
+      -- ^ The green bond's version.
+    instrumentKey: Instrument.K 
+    greenbondHoldingCid: ContractId Holding.I 
+    accountKey: AccountKey
+    purpose : Text
+      -- ^ A description of the green bond.
+    couponRate : Decimal
+      -- ^ The fixed coupon rate, per annum. For example, in case of a "3.5% p.a coupon" this should
+      --   be 0.035. This can also used as a floating coupon spread. For example, in case of
+      --   "3M Libor + 0.5%" this should be 0.005.
+    periodicSchedule : PeriodicSchedule
+      -- ^ The schedule for the periodic coupon payments. The coupon is paid on the last date of
+      --   each schedule period.
+    holidayCalendarIds : [Text]
+      -- ^ The identifiers of the holiday calendars to be used for the coupon schedule.
+    calendarDataProvider : Party
+      -- ^ The reference data provider to use for the holiday calendar.
+    dayCountConvention : DayCountConventionEnum
+      -- ^ The day count convention used to calculate day count fractions. For example: Act360.
+    cashInstrument : InstrumentKey
+      -- ^ The currency of the bond. For example, if the bond pays in USD this should be a USD cash
+      --   instrument.
+    notional : Decimal
+      -- ^ The notional of the bond. This is the face value corresponding to one unit of the bond
+      --   instrument. For example, if one bond unit corresponds to 1000 USD, this should be 1000.0.
+    observers : S.Set Party 
+      -- ^ The observers of the instrument.
+    lastEventTimestamp : Time
+      -- ^ (Market) time of the last recorded lifecycle event. If no event has occurred yet, the
+      --   time of creation should be used.
+    impact : ImpactEnum
+      -- ^ Defines whether the bond has a social or environmental impact.
+  -- CALLABLE_BOND_TEMPLATE_END
+  where
+    signatory accountKey.custodian, accountKey.owner
+    observer observers
+    key instrumentKey: Instrument.K 
+    maintainer key.issuer 

@@ -14,7 +14,7 @@ import Daml.Trading.Scripts.HoldingSetup qualified as HoldingSetup
 setup: Script () 
 setup = do 
   (public, admin, cashInstrument, accountFactoryCid, 
-    cashHoldingFactoryCid, nftHoldingFactoryCid, instrumentFactoryCid, adminHoldingCid) <- HoldingSetup.initialize 
+    cashHoldingFactoryCid, nftHoldingFactoryCid, greenBondHoldingFactoryCid, instrumentFactoryCid, adminHoldingCid) <- HoldingSetup.initialize 
   [alice] <- UserSetup.createUsers public ["Alice"]
   
   aliceRequestCid <- submit alice do
