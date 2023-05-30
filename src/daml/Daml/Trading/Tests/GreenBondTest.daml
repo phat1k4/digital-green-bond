@@ -6,7 +6,6 @@ import DA.Map (fromList)
 import DA.Date (date, Month(..))
 import DA.Time (time)
 
-import DA.Set qualified as S (empty)
 import Daml.Script 
 
 import Daml.Finance.Interface.Types.Common.Types (InstrumentKey(..), Id(..))
@@ -22,133 +21,176 @@ import Daml.Finance.Interface.Types.Date.RollConvention qualified as RollConvent
 import Daml.Finance.Interface.Types.Date.Calendar qualified as Calendar
 import Daml.Finance.Interface.Types.Date.DayCount qualified as DayCount 
 import qualified Daml.Finance.Interface.Util.Disclosure as Disclosure
-
+import Daml.Finance.Holding.NonFungible qualified as NonFungible
 
 shouldAcceptGreenbondRequest: Script () 
 shouldAcceptGreenbondRequest = do 
-  (public, admin, cashInstrument, accountFactoryCid, 
-    cashHoldingFactoryCid, nftHoldingFactoryCid, greenBondHoldingFactoryCid, instrumentFactoryCid, adminHoldingCid) <- HoldingSetup.initialize 
-  [alice] <- UserSetup.createUsers public ["Alice"]
- 
-  aliceRequestCid <- submit alice do
+  (public, admin, central_securities_depository, legal_counsel, arranger, cashInstrument, accountFactoryCid, 
+    cashHoldingFactoryCid, nftHoldingFactoryCid, greenBondHoldingFactoryCid, instrumentFactoryCid, adminHoldingCid, depositoryAdminGreenBondAccountCid) <- HoldingSetup.initialize
+
+  [gft] <- UserSetup.createUsers public ["GFT"]
+  gftRequestCid <- submit gft do
     createCmd CreateAccount.AccountRequest
       with
-        owner = alice
+        owner = gft
         custodian = admin
-        accountType = Account.Retail 
-        username = "alice" 
-        realName = "Alice Ackerson" 
-        passportNumber = "222222" 
+        accountType = Account.Bond_Issuer
+        username = "gft" 
+        realName = "GFT Group" 
+        passportNumber = "123456789" 
         nationalId = "" 
-        address  = "New York" 
-  (aliceAccountCid, _) <- submit admin $ exerciseCmd aliceRequestCid CreateAccount.Request_Accept
-  aliceAccountCid <- submit admin $ exerciseCmd aliceAccountCid Account.Create_GreenBond_Account 
+        address  = "Berlin" 
+  (gftAccountCid, _) <- submit admin $ exerciseCmd gftRequestCid CreateAccount.Request_Accept
+  gftAccountCid <- submit admin $ exerciseCmd gftAccountCid Account.Create_GreenBond_Account 
     with 
-      description = "Alice GreenBond Account" 
+      description = "GFT GreenBond Account" 
       accountFactoryCid 
       holdingFactoryCid = greenBondHoldingFactoryCid 
       instrumentFactoryCid 
-      observers = [] 
+      observers = [public, central_securities_depository, legal_counsel, arranger]
 
-  greenBondIssueRequestCid <- submit alice do 
+  pending <- submit gft $ createCmd GreenBond.GreenBondRequest 
+    with
+      owner = gft
+      arranger = arranger
+      legal_counsel = legal_counsel
+      admin_account = admin
+      depository = central_securities_depository
+      purpose  = "Text"
+      couponRate = 0.01
+      periodicSchedule = Schedule.PeriodicSchedule with 
+        effectiveDate = date 2023 May 10 
+        terminationDate = date 2025 Jun 11 
+        firstRegularPeriodStartDate = None 
+        lastRegularPeriodEndDate = None 
+        frequency = Schedule.Frequency with 
+          period = RollConvention.M 
+          periodMultiplier = 6 
+          rollConvention = RollConvention.EOM 
+        businessDayAdjustment = Calendar.BusinessDayAdjustment with 
+          calendarIds = [] 
+          convention = Calendar.Following 
+        effectiveDateBusinessDayAdjustment = None 
+        terminationDateBusinessDayAdjustment = None 
+        stubPeriodType = None 
+      holidayCalendarIds = []
+      calendarDataProvider = admin 
+      dayCountConvention = DayCount.ActActICMA 
+      cashInstrument 
+      notional = 1_000_000.0
+      observers = S.fromList[public, central_securities_depository, legal_counsel, arranger]
+      lastEventTimestamp = time (date 2023 May 10) 1 1 1 
+      impact = GreenBond.Social_Impact_1
+      issue_amount = 10_000
+  pending <- submit gft do
+    exerciseCmd pending GreenBond.OwnerSign
     
-    createCmd GreenBond.GreenBondRequest
-      with
-        depository = admin
-        owner = alice
-        -- id : Id
-        -- version : Text
-        purpose  = "Text"
-        couponRate = 0.01
-        periodicSchedule = Schedule.PeriodicSchedule with 
-          effectiveDate = date 2023 May 10 
-          terminationDate = date 2025 Jun 11 
-          firstRegularPeriodStartDate = None 
-          lastRegularPeriodEndDate = None 
-          frequency = Schedule.Frequency with 
-            period = RollConvention.M 
-            periodMultiplier = 6 
-            rollConvention = RollConvention.EOM 
-          businessDayAdjustment = Calendar.BusinessDayAdjustment with 
-            calendarIds = [] 
-            convention = Calendar.Following 
-          effectiveDateBusinessDayAdjustment = None 
-          terminationDateBusinessDayAdjustment = None 
-          stubPeriodType = None 
-        holidayCalendarIds = []
-        calendarDataProvider = admin 
-        dayCountConvention = DayCount.ActActICMA 
-        cashInstrument 
-        notional = 0.0
-        observers = S.empty
-        lastEventTimestamp = time (date 2023 May 10) 1 1 1 
-        impact = GreenBond.Social_Impact_1
+  pending <- submit legal_counsel do
+    exerciseCmd pending GreenBond.Approve with signer = legal_counsel
+  pending <- submit arranger do
+    exerciseCmd pending GreenBond.Approve with signer = arranger
+  greenBondApprovalCid <- legal_counsel `submit` do
+    exerciseCmd pending GreenBond.Finalize with signer = legal_counsel
 
-  aliceNftKey <- submit admin $ exerciseCmd greenBondIssueRequestCid GreenBond.Accept 
+  gftGreenbondKey <- submit admin $ exerciseCmd greenBondApprovalCid GreenBond.Accept
+  
+  depositoryRequestCid <- submit central_securities_depository do
+    createCmd GreenBond.GreenbondTransferRequest with
+      depository = central_securities_depository
+      custodian = admin
+      owner = gft
+      instrument = gftGreenbondKey
+      amount = 10000.0
+  submit admin do exerciseCmd depositoryRequestCid GreenBond.AdminAccept
+--   submit admin do exerciseCmd depositoryRequestCid GreenBond.OwnerDebit
+
+
+--   [alice] <- UserSetup.createUsers public ["Alice"]
+--   aliceRequestCid <- submit alice do
+--     createCmd CreateAccount.AccountRequest
+--       with
+--         owner = alice
+--         custodian = admin
+--         accountType = Account.Retail_Investors 
+--         username = "alice" 
+--         realName = "Alice Ackerson" 
+--         passportNumber = "222222" 
+--         nationalId = "" 
+--         address  = "New York" 
+--   (aliceAccountCid, _) <- submit admin $ exerciseCmd aliceRequestCid CreateAccount.Request_Accept
+--   aliceAccountCid <- submit admin $ exerciseCmd aliceAccountCid Account.Create_GreenBond_Account 
+--     with 
+--       description = "Alice GreenBond Account" 
+--       accountFactoryCid 
+--       holdingFactoryCid = greenBondHoldingFactoryCid 
+--       instrumentFactoryCid 
+--       observers = [] 
 
   pure ()
 
 
 shouldRejectGreenbondRequest: Script () 
 shouldRejectGreenbondRequest = do 
-  (public, admin, cashInstrument, accountFactoryCid, 
-    cashHoldingFactoryCid, nftHoldingFactoryCid, greenBondHoldingFactoryCid, instrumentFactoryCid, adminHoldingCid) <- HoldingSetup.initialize 
-  [alice] <- UserSetup.createUsers public ["Alice"]
- 
-  aliceRequestCid <- submit alice do
+  (public, admin, central_securities_depository, legal_counsel, arranger, cashInstrument, accountFactoryCid, 
+    cashHoldingFactoryCid, nftHoldingFactoryCid, greenBondHoldingFactoryCid, instrumentFactoryCid, adminHoldingCid, depositoryAdminGreenBondAccountCid) <- HoldingSetup.initialize
+  [gft] <- UserSetup.createUsers public ["GFT"]
+  gftRequestCid <- submit gft do
     createCmd CreateAccount.AccountRequest
       with
-        owner = alice
+        owner = gft
         custodian = admin
-        accountType = Account.Retail 
-        username = "alice" 
-        realName = "Alice Ackerson" 
-        passportNumber = "222222" 
+        accountType = Account.Bond_Issuer
+        username = "gft" 
+        realName = "GFT Group" 
+        passportNumber = "123456789" 
         nationalId = "" 
-        address  = "New York" 
-  (aliceAccountCid, _) <- submit admin $ exerciseCmd aliceRequestCid CreateAccount.Request_Accept
-  aliceAccountCid <- submit admin $ exerciseCmd aliceAccountCid Account.Create_GreenBond_Account 
+        address  = "Berlin" 
+  (gftAccountCid, _) <- submit admin $ exerciseCmd gftRequestCid CreateAccount.Request_Accept
+  gftAccountCid <- submit admin $ exerciseCmd gftAccountCid Account.Create_GreenBond_Account 
     with 
-      description = "Alice GreenBond Account" 
+      description = "GFT GreenBond Account" 
       accountFactoryCid 
       holdingFactoryCid = greenBondHoldingFactoryCid 
       instrumentFactoryCid 
-      observers = [] 
+      observers = [public, central_securities_depository, legal_counsel, arranger]
 
-  greenBondIssueRequestCid <- submit alice do 
+  pending <- submit gft $ createCmd GreenBond.GreenBondRequest 
+    with
+      owner = gft
+      arranger = arranger
+      legal_counsel = legal_counsel
+      admin_account = admin
+      depository = central_securities_depository
+      purpose  = "Text"
+      couponRate = 0.01
+      periodicSchedule = Schedule.PeriodicSchedule with 
+        effectiveDate = date 2023 May 10 
+        terminationDate = date 2025 Jun 11 
+        firstRegularPeriodStartDate = None 
+        lastRegularPeriodEndDate = None 
+        frequency = Schedule.Frequency with 
+          period = RollConvention.M 
+          periodMultiplier = 6 
+          rollConvention = RollConvention.EOM 
+        businessDayAdjustment = Calendar.BusinessDayAdjustment with 
+          calendarIds = [] 
+          convention = Calendar.Following 
+        effectiveDateBusinessDayAdjustment = None 
+        terminationDateBusinessDayAdjustment = None 
+        stubPeriodType = None 
+      holidayCalendarIds = []
+      calendarDataProvider = admin 
+      dayCountConvention = DayCount.ActActICMA 
+      cashInstrument 
+      notional = 1_000_000.0
+      observers = S.fromList[public, central_securities_depository, legal_counsel, arranger]
+      lastEventTimestamp = time (date 2023 May 10) 1 1 1 
+      impact = GreenBond.Social_Impact_1
+      issue_amount = 10_000
+  pending <- submit gft do
+    exerciseCmd pending GreenBond.OwnerSign
     
-    createCmd GreenBond.GreenBondRequest
-      with
-        depository = admin
-        owner = alice
-        -- id : Id
-        -- version : Text
-        purpose  = "Text"
-        couponRate = 0.01
-        periodicSchedule = Schedule.PeriodicSchedule with 
-          effectiveDate = date 2023 May 10 
-          terminationDate = date 2025 Jun 11 
-          firstRegularPeriodStartDate = None 
-          lastRegularPeriodEndDate = None 
-          frequency = Schedule.Frequency with 
-            period = RollConvention.M 
-            periodMultiplier = 6 
-            rollConvention = RollConvention.EOM 
-          businessDayAdjustment = Calendar.BusinessDayAdjustment with 
-            calendarIds = [] 
-            convention = Calendar.Following 
-          effectiveDateBusinessDayAdjustment = None 
-          terminationDateBusinessDayAdjustment = None 
-          stubPeriodType = None 
-        holidayCalendarIds = []
-        calendarDataProvider = admin 
-        dayCountConvention = DayCount.ActActICMA 
-        cashInstrument 
-        notional = 0.0
-        observers = S.empty
-        lastEventTimestamp = time (date 2023 May 10) 1 1 1 
-        impact = GreenBond.Social_Impact_1
-
-  aliceNftKey <- submit admin $ exerciseCmd greenBondIssueRequestCid GreenBond.Decline 
+  pending <- submit legal_counsel do
+    exerciseCmd pending GreenBond.Reject with signer = legal_counsel
 
   pure ()

@@ -5,12 +5,13 @@ import DA.Set qualified as S
 import DA.Map (fromList)
 import DA.Date (date, Month(..))
 import DA.Time (time)
+import DA.List (unique, sort)
 
 import Daml.Finance.Interface.Types.Date.DayCount (DayCountConventionEnum)
-import qualified Daml.Finance.Interface.Util.Disclosure as Disclosure
+-- import qualified Daml.Finance.Interface.Util.Disclosure as Disclosure
 import Daml.Finance.Interface.Types.Date.Schedule (PeriodicSchedule)
-import Daml.Finance.Interface.Account.Account qualified as Account (Credit(..), I, exerciseInterfaceByKey)
-import Daml.Finance.Interface.Holding.Base qualified as Holding (I)
+import Daml.Finance.Interface.Account.Account qualified as Account (Credit(..), Debit(..),GetCid(..),I, exerciseInterfaceByKey)
+import Daml.Finance.Interface.Holding.Base qualified as Holding (I, Base)
 import Daml.Finance.Interface.Instrument.Base.Instrument qualified as Instrument (K, qty)
 import Daml.Finance.Interface.Instrument.Bond.FixedRate.Factory qualified as FixedRate (Create(..))
 import Daml.Finance.Interface.Instrument.Bond.FixedRate.Types qualified as FixedRate (FixedRate(..))
@@ -20,6 +21,9 @@ import Daml.Finance.Interface.Types.Date.RollConvention qualified as RollConvent
 import Daml.Finance.Interface.Types.Date.DayCount qualified as DayCount 
 import Daml.Finance.Interface.Types.Common.Types (AccountKey(..), Id(..), InstrumentKey(..))
 import Daml.Trading.Account.Account (greenBondLabel, Account)
+import Daml.Finance.Account.Account qualified as Account (T)
+import Daml.Finance.Holding.NonFungible qualified as NonFungible
+import Daml.Script (queryContractId)
 
 data ImpactEnum
   = Social_Impact_1
@@ -31,10 +35,11 @@ greenBondVersion = "0"
 
 template GreenBondRequest
   with
-    depository : Party
     owner : Party
-    -- id : Id
-    -- version : Text
+    arranger: Party
+    legal_counsel: Party
+    admin_account : Party
+    depository : Party
     purpose : Text
     couponRate : Decimal
     periodicSchedule : PeriodicSchedule
@@ -46,45 +51,119 @@ template GreenBondRequest
     observers : S.Set Party 
     lastEventTimestamp : Time
     impact : ImpactEnum
+    issue_amount : Int
   where
     signatory owner
-    observer depository
+    observer arranger, legal_counsel
+    choice OwnerSign : ContractId RequestPending
+      controller owner
+        do
+          let
+            finalContract = GreenBondAgreement
+              with
+                signatories = [owner, legal_counsel, arranger]
+                ..
+          create RequestPending
+            with
+              alreadySigned = [owner]
+              finalContract
+              ..
+    choice OwnerCancel : ()
+      controller owner 
+        do pure()
 
-    choice Accept : Instrument.K 
-      controller depository 
+template RequestPending
+  with
+    alreadySigned: [Party]
+    finalContract: GreenBondAgreement 
+    purpose : Text
+    couponRate : Decimal
+    periodicSchedule : PeriodicSchedule
+    holidayCalendarIds : [Text]
+    calendarDataProvider : Party
+    dayCountConvention : DayCountConventionEnum
+    cashInstrument : InstrumentKey
+    notional : Decimal
+    observers : S.Set Party 
+    lastEventTimestamp : Time
+    impact : ImpactEnum
+    issue_amount : Int
+  where
+    signatory alreadySigned
+    observer finalContract.signatories
+    ensure
+      -- Can't have duplicate signatories
+      unique alreadySigned
+
+    -- The parties who need to sign is the finalContract.signatories with alreadySigned filtered out
+    let toSign = filter (`notElem` alreadySigned) finalContract.signatories
+
+    choice Approve : ContractId RequestPending 
+      with
+        signer : Party
+      controller signer
+        do
+          -- Check the controller is in the toSign list, and if they are, sign the Pending contract
+          assert (signer `elem` toSign)
+          create this with alreadySigned = signer :: alreadySigned
+    
+    choice Finalize : ContractId GreenBondAgreement with
+        signer : Party
+      controller signer
+        do
+          -- Check that all the required signatories have signed Pending
+          assert (sort alreadySigned == sort finalContract.signatories)
+          create finalContract
+    choice Reject : ()
+      with
+        signer : Party
+      controller signer
+        do pure ()
+
+template GreenBondAgreement
+  with
+    signatories: [Party]
+    admin_account : Party
+    depository : Party
+    owner : Party
+    arranger : Party
+    legal_counsel : Party
+    purpose : Text
+    couponRate : Decimal
+    periodicSchedule : PeriodicSchedule
+    holidayCalendarIds : [Text]
+    calendarDataProvider : Party
+    dayCountConvention : DayCountConventionEnum
+    cashInstrument : InstrumentKey
+    notional : Decimal
+    observers : S.Set Party 
+    lastEventTimestamp : Time
+    impact : ImpactEnum
+    issue_amount : Int
+  where
+    signatory signatories
+    observer owner, admin_account, depository
+    choice Accept : Instrument.K
+      controller admin_account 
       do
         let 
-          accountKey = AccountKey with custodian = depository, owner, id = Id greenBondLabel
-          amount = 1.0
-          instrumentKey = InstrumentKey with depository = depository, issuer = depository, id = Id purpose, version = greenBondVersion
-        (accountCid, account) <- fetchByKey @Account (depository, owner) 
+          accountKey = AccountKey with custodian = admin_account, owner, id = Id greenBondLabel
+          amount = intToNumeric (issue_amount)
+          instrumentKey = InstrumentKey with depository=admin_account, issuer = owner, id = Id purpose, version = greenBondVersion
+        (accountCid, account) <- fetchByKey @Account (admin_account, owner) 
 
         let 
           (_, _, instrumentFactoryCid, _) = fromSome account.optGreenBondAccount 
           fixedRate = FixedRate.FixedRate with 
             instrument = instrumentKey 
             description = purpose 
-            couponRate = 0.1 
-            periodicSchedule = Schedule.PeriodicSchedule with 
-              effectiveDate = date 2023 May 10 
-              terminationDate = date 2025 Jun 11 
-              firstRegularPeriodStartDate = None 
-              lastRegularPeriodEndDate = None 
-              frequency = Schedule.Frequency with 
-                period = RollConvention.M 
-                periodMultiplier = 6 
-                rollConvention = RollConvention.EOM 
-              businessDayAdjustment = Calendar.BusinessDayAdjustment with 
-                calendarIds = [] 
-                convention = Calendar.Following 
-              effectiveDateBusinessDayAdjustment = None 
-              terminationDateBusinessDayAdjustment = None 
-              stubPeriodType = None 
-            holidayCalendarIds = [] 
-            calendarDataProvider = depository 
-            dayCountConvention = DayCount.ActActICMA 
+            couponRate
+            periodicSchedule
+            holidayCalendarIds
+            calendarDataProvider
+            dayCountConvention 
             currency = cashInstrument 
-            lastEventTimestamp = time (date 2023 May 10) 1 1 1 
+            lastEventTimestamp
 
         now <- getTime 
 
@@ -92,34 +171,15 @@ template GreenBondRequest
           fixedRate
           observers = fromList [("InstrumentObserver", observers)]
         
-        greenbondHoldingCid <- Account.exerciseInterfaceByKey @Account.I accountKey depository Account.Credit
+        greenbondHoldingCid <- Account.exerciseInterfaceByKey @Account.I accountKey admin_account Account.Credit
           with
             quantity = Instrument.qty amount instrumentKey
 
-        create GreenBond with 
-          -- depository 
-          -- issuer 
-          -- id
-          -- version
-          instrumentKey
-          accountKey
-          greenbondHoldingCid
-          purpose
-          couponRate
-          periodicSchedule
-          holidayCalendarIds
-          calendarDataProvider
-          dayCountConvention
-          cashInstrument
-          notional
-          observers
-          lastEventTimestamp
-          impact
-        
+        create GreenBond with ..
         pure (instrumentKey)
 
     choice Decline : ()
-      controller depository
+      controller admin_account
       do pure ()
 
 
@@ -134,7 +194,6 @@ template GreenBond
     -- version : Text
       -- ^ The green bond's version.
     instrumentKey: Instrument.K 
-    greenbondHoldingCid: ContractId Holding.I 
     accountKey: AccountKey
     purpose : Text
       -- ^ A description of the green bond.
@@ -163,10 +222,52 @@ template GreenBond
       -- ^ (Market) time of the last recorded lifecycle event. If no event has occurred yet, the
       --   time of creation should be used.
     impact : ImpactEnum
+    issue_amount : Int
       -- ^ Defines whether the bond has a social or environmental impact.
   -- CALLABLE_BOND_TEMPLATE_END
   where
     signatory accountKey.custodian, accountKey.owner
     observer observers
     key instrumentKey: Instrument.K 
-    maintainer key.issuer 
+    maintainer key.issuer
+
+
+template GreenbondTransferRequest
+  with
+    depository: Party
+    owner: Party 
+    custodian: Party 
+    instrument : Instrument.K
+    amount : Decimal
+  where
+    signatory depository
+    observer custodian, owner
+
+    ensure amount > 0.0
+
+    nonconsuming choice AdminAccept : ContractId Holding.I
+      controller custodian
+      do
+        let
+          accountKey = AccountKey with custodian, owner=depository, id = Id greenBondLabel
+        accountholdingCid <- Account.exerciseInterfaceByKey @Account.I accountKey custodian Account.Credit
+          with
+            quantity = Instrument.qty amount instrument
+        pure(accountholdingCid)
+
+    choice OwnerDebit : ()
+      controller owner
+      do
+        --TODO: archive old NonFungible of owner
+        (accountCid, account) <- fetchByKey @Account (custodian, owner)
+        let
+          accountKey = AccountKey with custodian, owner, id = Id greenBondLabel
+          newaccountCid : ContractId Holding.Base = coerceContractId accountCid
+        accountholdingCid <- Account.exerciseInterfaceByKey @Account.I accountKey custodian Account.Debit
+          with
+            holdingCid = newaccountCid
+        pure(accountholdingCid)
+    
+    choice OwnerDecline : ()
+      controller owner
+      do pure ()

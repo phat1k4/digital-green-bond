@@ -27,7 +27,7 @@ instrumentData = (Id "USD", "0")
 
 initialize : Script HoldingSetupState
 initialize = do 
-  [public, admin] <- UserSetup.getDefaultParties 
+  [public, admin, central_securities_depository, legal_counsel, arranger] <- UserSetup.getDefaultParties 
 
   accountFactoryCid <- toInterfaceContractId @Account.F <$> submit admin do
     createCmd Account.Factory
@@ -159,5 +159,32 @@ initialize = do
         amount = 100000000.0
   adminHoldingCid <- submit admin $ exerciseCmd adminCreditCid CreditCashAccount.Accept
 
-  pure (public, admin, cashInstrument, accountFactoryCid, cashHoldingFactoryCid, nftHoldingFactoryCid, greenBondHoldingFactoryCid, instrumentFactoryCid, adminHoldingCid)
-type HoldingSetupState = (Party, Party, InstrumentKey, ContractId Account.F, ContractId Holding.F, ContractId Holding.F, ContractId Holding.F, ContractId Instrument.F, ContractId Holding.I)
+
+  depositoryRequestCid <- submit central_securities_depository do 
+    createCmd CreateAccount.AccountRequest 
+      with 
+        owner = central_securities_depository 
+        custodian = admin 
+        accountType = Account.Central_Securities_Depository
+        username = "Depository Admin" 
+        realName = "Platform Depository" 
+        passportNumber = "999999" 
+        nationalId = "" 
+        address  = "Unknown" 
+  (depositoryAdminAccountCid, _) <- submit admin $ exerciseCmd depositoryRequestCid CreateAccount.Request_Accept 
+--   depositoryAdminAccountCid <- submit admin $ exerciseCmd depositoryAdminAccountCid Account.Create_Cash_Account 
+--     with 
+--       description = "Depository Cash Account" 
+--       accountFactoryCid
+--       holdingFactoryCid = cashHoldingFactoryCid
+--       observers = [public] 
+  depositoryAdminGreenBondAccountCid <- submit admin $ exerciseCmd depositoryAdminAccountCid Account.Create_GreenBond_Account
+    with 
+      description = "Depository Green Bond Account" 
+      accountFactoryCid
+      holdingFactoryCid = greenBondHoldingFactoryCid
+      instrumentFactoryCid
+      observers = [public] 
+
+  pure (public, admin, central_securities_depository, legal_counsel, arranger, cashInstrument, accountFactoryCid, cashHoldingFactoryCid, nftHoldingFactoryCid, greenBondHoldingFactoryCid, instrumentFactoryCid, adminHoldingCid, depositoryAdminGreenBondAccountCid)
+type HoldingSetupState = (Party, Party, Party, Party, Party, InstrumentKey, ContractId Account.F, ContractId Holding.F, ContractId Holding.F, ContractId Holding.F, ContractId Instrument.F, ContractId Holding.I, ContractId Account.Account)

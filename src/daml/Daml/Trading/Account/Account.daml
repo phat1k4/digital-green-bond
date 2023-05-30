@@ -245,7 +245,14 @@ template Account
 -- we use custodian Party as admin for simplicity
 data AccountType 
   = Admin 
-  | Retail 
-  | Pro 
+  | Bond_Issuer
+  | Retail_Investors
+  | Central_Securities_Depository
+  | Legal_Counsel
+  | Arrangers
+  | Stock_Exchange
+  | Placing_banks_Brokers
+  | Green_Data_Provider
+  | Third_Party_Auditors
   deriving (Eq, Show)
     

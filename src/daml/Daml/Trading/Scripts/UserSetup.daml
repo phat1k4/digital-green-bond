@@ -14,7 +14,10 @@ getDefaultParties : Script [Party]
 getDefaultParties = do
   public <- createPublic
   admin <- createTestUser $ TestUser "Admin" public 
-  pure [public, admin]
+  central_securities_depository <- createTestUser $ TestUser "Central_Securities_Depository" public 
+  legal_counsel <- createTestUser $ TestUser "Legal_Counsel" public
+  arrangers <- createTestUser $ TestUser "Arrangers" public
+  pure [public, admin, central_securities_depository, legal_counsel, arrangers]
 
 createUsers: Party -> [Text] -> Script [Party] 
 createUsers public aliases = do 

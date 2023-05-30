@@ -16,9 +16,8 @@ import Daml.Finance.Interface.Instrument.Bond.FixedRate.Factory qualified as Ins
 
 cashIssuance : Script CashIssuanceState
 cashIssuance = do 
-
-  (public, admin, cashInstrument, accountFactoryCid, 
-    cashHoldingFactoryCid, nftHoldingFactoryCid, instrumentFactoryCid, adminHoldingCid) <- HoldingSetup.initialize 
+  (public, admin, central_cecurities_depository, legal_counsel, arrangers, cashInstrument, accountFactoryCid, 
+    cashHoldingFactoryCid, nftHoldingFactoryCid, greenBondHoldingFactoryCid, instrumentFactoryCid, adminHoldingCid) <- HoldingSetup.initialize
   [alice, bob] <- UserSetup.createUsers public ["Alice", "Bob"]
 
   aliceRequestCid <- submit alice do
@@ -26,7 +25,7 @@ cashIssuance = do
       with
         owner = alice
         custodian = admin
-        accountType = Account.Retail 
+        accountType = Account.Retail_Investors
         username = "alice" 
         realName = "Alice Ackerson" 
         passportNumber = "222222" 
@@ -53,7 +52,7 @@ cashIssuance = do
       with
         owner = bob
         custodian = admin
-        accountType = Account.Retail 
+        accountType = Account.Retail_Investors 
         username = "bob" 
         realName = "Bob Bader" 
         passportNumber = "" 

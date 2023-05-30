@@ -13,8 +13,8 @@ import Daml.Trading.Scripts.HoldingSetup qualified as HoldingSetup
 
 setup: Script () 
 setup = do 
-  (public, admin, cashInstrument, accountFactoryCid, 
-    cashHoldingFactoryCid, nftHoldingFactoryCid, greenBondHoldingFactoryCid, instrumentFactoryCid, adminHoldingCid) <- HoldingSetup.initialize 
+  (public, admin, central_cecurities_depository, legal_counsel, arranger, cashInstrument, accountFactoryCid, 
+    cashHoldingFactoryCid, nftHoldingFactoryCid, greenBondHoldingFactoryCid, instrumentFactoryCid, adminHoldingCid, depositoryAdminGreenBondAccountCid) <- HoldingSetup.initialize
   [alice] <- UserSetup.createUsers public ["Alice"]
   
   aliceRequestCid <- submit alice do
@@ -22,7 +22,7 @@ setup = do
       with
         owner = alice
         custodian = admin
-        accountType = Account.Retail 
+        accountType = Account.Retail_Investors
         username = "alice" 
         realName = "Alice Ackerson" 
         passportNumber = "222222" 
@@ -51,7 +51,7 @@ setup = do
         observers = S.empty 
         cashInstrument 
 
-  aliceNftKey <- submit admin $ exerciseCmd nftIssueRequestCid Nft.Accept 
+  aliceNftKey <- submit admin $ exerciseCmd nftIssueRequestCid Nft.Accept
 
   let 
     expectedAliceNftKey = InstrumentKey with 
